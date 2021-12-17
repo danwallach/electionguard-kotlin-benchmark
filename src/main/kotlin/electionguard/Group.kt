@@ -147,6 +147,13 @@ interface ElementModP : Element, Comparable<ElementModP> {
 
     /** Allows elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
     override operator fun compareTo(other: ElementModP): Int
+
+    /**
+     * Creates a new instance of this element where the `powP` function will use the acceleration
+     * possible with `PowRadix` to run faster. The `PowRadixOption` for this instance is taken from
+     * the `GroupContext`.
+     */
+    fun acceleratePow(): ElementModP
 }
 
 // 4096-bit P and 256-bit Q primes, plus generator G and cofactor R

@@ -58,4 +58,7 @@ class GroupTestJMB {
 
     @TestFactory
     fun exponentiation() = runTests { it.exponentiation() }
+
+    @TestFactory
+    fun acceleratedExponentiation() = runTests { it.acceleratedExponentiation() }
 }

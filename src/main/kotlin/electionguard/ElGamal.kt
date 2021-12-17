@@ -25,7 +25,7 @@ fun elGamalKeyPairFromSecret(secret: ElGamalSecretKey) =
     if (secret < 2.toElementModQ(secret.context))
         throw ArithmeticException("secret key must be in [2, Q)")
     else
-        ElGamalKeypair(secret, secret.context.gPowP(secret))
+        ElGamalKeypair(secret, secret.context.gPowP(secret).acceleratePow())
 
 /** Generates a random ElGamal keypair. */
 fun elGamalKeyPairFromRandom(ctx: GroupContext) =

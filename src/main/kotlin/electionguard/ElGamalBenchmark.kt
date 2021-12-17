@@ -15,52 +15,55 @@ fun main() {
 
     PowRadixOption.values()
         .forEach { powRadixOption ->
-            listOf("kt-math", "java.math.BigInteger").forEach { impl ->
-                println("Initializing benchmark for $powRadixOption ($impl)")
-                val context = when(impl) {
-                    "java.math.BigInteger" -> productionGroupJMB(powRadixOption)
-                    "kt-math" -> productionGroupKTM(powRadixOption)
-                    else -> throw Error("won't happen")
+            listOf("kt-math", "java.math.BigInteger")
+                .forEach { impl ->
+                    println("Initializing benchmark for $powRadixOption ($impl)")
+                    val context =
+                        when (impl) {
+                            "java.math.BigInteger" -> productionGroupJMB(powRadixOption)
+                            "kt-math" -> productionGroupKTM(powRadixOption)
+                            else -> throw Error("won't happen")
+                        }
+
+                    val keypair = elGamalKeyPairFromRandom(context)
+                    val nonces = Array(N) { context.randomElementModQ() }
+                    val random = Random(System.nanoTime()) // not secure, but we don't care
+                    println("Running!")
+
+                    val deltaTimeMs =
+                        measureTimeMillis {
+                            ProgressBar
+                                .wrap(
+                                    (0..N - 1).asIterable().toList(),
+                                    ProgressBarBuilder()
+                                        .setStyle(ProgressBarStyle.COLORFUL_UNICODE_BLOCK)
+                                        .setInitialMax(N.toLong())
+                                        .setUpdateIntervalMillis(50)
+                                        .setSpeedUnit(ChronoUnit.SECONDS)
+                                        .setUnit("ops", 1L)
+                                        .setMaxRenderedLength(100)
+                                        .showSpeed()
+                                )
+                                .forEach { i ->
+                                    val nonce = nonces[i]
+                                    val message = random.nextInt(1000)
+                                    val ciphertext = keypair.encrypt(message, nonce)
+                                    val plaintext = ciphertext.decrypt(keypair)
+                                    if (plaintext == null) {
+                                        print("Unexpected decryption failure")
+                                        exitProcess(1)
+                                    }
+                                    if (plaintext != message) {
+                                        print("Decryption isn't the inverse of encryption?")
+                                        exitProcess(1)
+                                    }
+                                }
+                        }
+                    val deltaTime = deltaTimeMs / 1000.0
+                    println(
+                        "%d ElGamal encryption/decryption operations in %.2f seconds\n  = %.5f ops/sec"
+                            .format(N, deltaTime, N / (deltaTime))
+                    )
                 }
-
-                val keypair = elGamalKeyPairFromRandom(context)
-                val nonces = Array(N) { context.randomElementModQ() }
-                val random = Random(System.nanoTime()) // not secure, but we don't care
-                println("Running!")
-
-                val deltaTimeMs =
-                    measureTimeMillis {
-                        ProgressBar
-                            .wrap(
-                                (0..N - 1).asIterable().toList(),
-                                ProgressBarBuilder().setStyle(ProgressBarStyle.COLORFUL_UNICODE_BLOCK)
-                                    .setInitialMax(N.toLong())
-                                    .setUpdateIntervalMillis(50)
-                                    .setSpeedUnit(ChronoUnit.SECONDS)
-                                    .setUnit("ops", 1L)
-                                    .setMaxRenderedLength(100)
-                                    .showSpeed()
-                            )
-                            .forEach { i ->
-                                val nonce = nonces[i]
-                                val message = random.nextInt(1000)
-                                val ciphertext = keypair.encrypt(message, nonce)
-                                val plaintext = ciphertext.decrypt(keypair)
-                                if (plaintext == null) {
-                                    print("Unexpected decryption failure")
-                                    exitProcess(1)
-                                }
-                                if (plaintext != message) {
-                                    print("Decryption isn't the inverse of encryption?")
-                                    exitProcess(1)
-                                }
-                            }
-                    }
-                val deltaTime = deltaTimeMs / 1000.0
-                println(
-                    "%d ElGamal encryption/decryption operations in %.2f seconds\n  = %.5f ops/sec"
-                        .format(N, deltaTime, N / (deltaTime))
-                )
-            }
         }
 }

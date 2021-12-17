@@ -147,4 +147,16 @@ class GroupTest(val context: GroupContext) {
             }
         }
     }
+
+    fun acceleratedExponentiation() {
+        runProperty {
+            forAll(propTestFastConfig, elementsModQ(context), elementsModQ(context)) { a, b ->
+                val ga = context.gPowP(a)
+                val normal = ga powP b
+                val gaAccelerated = ga.acceleratePow()
+                val faster = gaAccelerated powP b
+                normal == faster
+            }
+        }
+    }
 }

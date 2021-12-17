@@ -237,8 +237,7 @@ private fun Element.getCompat(other: GroupContext): BigInteger {
 class ElementModQJMB(val element: BigInteger, val groupContext: GroupContextJMB) : Element,
     Comparable<ElementModQ>, ElementModQ {
 
-    internal fun BigInteger.wrap(): ElementModQ =
-        ElementModQJMB(this, groupContext)
+    internal fun BigInteger.wrap(): ElementModQ = ElementModQJMB(this, groupContext)
     internal fun BigInteger.modWrap(): ElementModQ = this.mod(groupContext.q).wrap()
 
     override val context: GroupContext
@@ -282,7 +281,7 @@ class ElementModQJMB(val element: BigInteger, val groupContext: GroupContextJMB)
     override fun toString() = element.toString(10)
 }
 
-class ElementModPJMB(val element: BigInteger, val groupContext: GroupContextJMB) : Element,
+open class ElementModPJMB(val element: BigInteger, val groupContext: GroupContextJMB) : Element,
     Comparable<ElementModP>, ElementModP {
 
     internal fun BigInteger.wrap(): ElementModP = ElementModPJMB(this, groupContext)
@@ -328,4 +327,24 @@ class ElementModPJMB(val element: BigInteger, val groupContext: GroupContextJMB)
     override fun hashCode() = element.hashCode()
 
     override fun toString() = element.toString(10)
+
+    override fun acceleratePow(): ElementModP =
+        if (groupContext.powRadixOption == PowRadixOption.NO_ACCELERATION)
+            this
+        else
+            AcceleratedElementModPJMB(
+                PowRadix(this, groupContext.powRadixOption),
+                element,
+                groupContext
+            )
+}
+
+class AcceleratedElementModPJMB(
+    val powRadix: PowRadix,
+    element: BigInteger,
+    groupContext: GroupContextJMB
+) : ElementModPJMB(element, groupContext) {
+    override fun acceleratePow(): ElementModP = this
+
+    override infix fun powP(e: ElementModQ) = powRadix.pow(e)
 }

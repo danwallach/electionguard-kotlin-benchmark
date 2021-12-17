@@ -18,45 +18,45 @@ private val testGroupContext =
 private val productionGroups: HashMap<PowRadixOption, GroupContextKTM> =
     hashMapOf(
         PowRadixOption.NO_ACCELERATION to
-                GroupContextKTM(
-                    pBytes = b64ProductionP.fromBase64OrCrash(),
-                    qBytes = b64ProductionQ.fromBase64OrCrash(),
-                    gBytes = b64ProductionG.fromBase64OrCrash(),
-                    rBytes = b64ProductionR.fromBase64OrCrash(),
-                    strong = true,
-                    name = "production group, no acceleration",
-                    powRadixOption = PowRadixOption.NO_ACCELERATION
-                ),
+            GroupContextKTM(
+                pBytes = b64ProductionP.fromBase64OrCrash(),
+                qBytes = b64ProductionQ.fromBase64OrCrash(),
+                gBytes = b64ProductionG.fromBase64OrCrash(),
+                rBytes = b64ProductionR.fromBase64OrCrash(),
+                strong = true,
+                name = "production group, no acceleration",
+                powRadixOption = PowRadixOption.NO_ACCELERATION
+            ),
         PowRadixOption.LOW_MEMORY_USE to
-                GroupContextKTM(
-                    pBytes = b64ProductionP.fromBase64OrCrash(),
-                    qBytes = b64ProductionQ.fromBase64OrCrash(),
-                    gBytes = b64ProductionG.fromBase64OrCrash(),
-                    rBytes = b64ProductionR.fromBase64OrCrash(),
-                    strong = true,
-                    name = "production group, low memory use",
-                    powRadixOption = PowRadixOption.LOW_MEMORY_USE
-                ),
+            GroupContextKTM(
+                pBytes = b64ProductionP.fromBase64OrCrash(),
+                qBytes = b64ProductionQ.fromBase64OrCrash(),
+                gBytes = b64ProductionG.fromBase64OrCrash(),
+                rBytes = b64ProductionR.fromBase64OrCrash(),
+                strong = true,
+                name = "production group, low memory use",
+                powRadixOption = PowRadixOption.LOW_MEMORY_USE
+            ),
         PowRadixOption.HIGH_MEMORY_USE to
-                GroupContextKTM(
-                    pBytes = b64ProductionP.fromBase64OrCrash(),
-                    qBytes = b64ProductionQ.fromBase64OrCrash(),
-                    gBytes = b64ProductionG.fromBase64OrCrash(),
-                    rBytes = b64ProductionR.fromBase64OrCrash(),
-                    strong = true,
-                    name = "production group, high memory use",
-                    powRadixOption = PowRadixOption.HIGH_MEMORY_USE
-                ),
+            GroupContextKTM(
+                pBytes = b64ProductionP.fromBase64OrCrash(),
+                qBytes = b64ProductionQ.fromBase64OrCrash(),
+                gBytes = b64ProductionG.fromBase64OrCrash(),
+                rBytes = b64ProductionR.fromBase64OrCrash(),
+                strong = true,
+                name = "production group, high memory use",
+                powRadixOption = PowRadixOption.HIGH_MEMORY_USE
+            ),
         PowRadixOption.EXTREME_MEMORY_USE to
-                GroupContextKTM(
-                    pBytes = b64ProductionP.fromBase64OrCrash(),
-                    qBytes = b64ProductionQ.fromBase64OrCrash(),
-                    gBytes = b64ProductionG.fromBase64OrCrash(),
-                    rBytes = b64ProductionR.fromBase64OrCrash(),
-                    strong = true,
-                    name = "production group, extreme memory use",
-                    powRadixOption = PowRadixOption.EXTREME_MEMORY_USE
-                )
+            GroupContextKTM(
+                pBytes = b64ProductionP.fromBase64OrCrash(),
+                qBytes = b64ProductionQ.fromBase64OrCrash(),
+                gBytes = b64ProductionG.fromBase64OrCrash(),
+                rBytes = b64ProductionR.fromBase64OrCrash(),
+                strong = true,
+                name = "production group, extreme memory use",
+                powRadixOption = PowRadixOption.EXTREME_MEMORY_USE
+            )
     )
 
 fun productionGroupKTM(option: PowRadixOption): GroupContextKTM =
@@ -237,8 +237,7 @@ private fun Element.getCompat(other: GroupContext): BigInteger {
 class ElementModQKTM(val element: BigInteger, val groupContext: GroupContextKTM) : Element,
     Comparable<ElementModQ>, ElementModQ {
 
-    internal fun BigInteger.wrap(): ElementModQ =
-        ElementModQKTM(this, groupContext)
+    internal fun BigInteger.wrap(): ElementModQ = ElementModQKTM(this, groupContext)
     internal fun BigInteger.modWrap(): ElementModQ = this.rem(groupContext.q).wrap()
 
     override val context: GroupContext
@@ -282,7 +281,7 @@ class ElementModQKTM(val element: BigInteger, val groupContext: GroupContextKTM)
     override fun toString() = element.toString(10)
 }
 
-class ElementModPKTM(val element: BigInteger, val groupContext: GroupContextKTM) : Element,
+open class ElementModPKTM(val element: BigInteger, val groupContext: GroupContextKTM) : Element,
     Comparable<ElementModP>, ElementModP {
 
     internal fun BigInteger.wrap(): ElementModP = ElementModPKTM(this, groupContext)
@@ -328,4 +327,24 @@ class ElementModPKTM(val element: BigInteger, val groupContext: GroupContextKTM)
     override fun hashCode() = element.hashCode()
 
     override fun toString() = element.toString(10)
+
+    override fun acceleratePow(): ElementModP =
+        if (groupContext.powRadixOption == PowRadixOption.NO_ACCELERATION)
+            this
+        else
+            AcceleratedElementModPKTM(
+                PowRadix(this, groupContext.powRadixOption),
+                element,
+                groupContext
+            )
+}
+
+class AcceleratedElementModPKTM(
+    val powRadix: PowRadix,
+    element: BigInteger,
+    groupContext: GroupContextKTM
+) : ElementModPKTM(element, groupContext) {
+    override fun acceleratePow(): ElementModP = this
+
+    override infix fun powP(e: ElementModQ) = powRadix.pow(e)
 }
