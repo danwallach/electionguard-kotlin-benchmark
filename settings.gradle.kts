@@ -1,1 +1,1 @@
-rootProject.name = "electionguard-kotlin-multiplatform"
+rootProject.name = "electionguard-kotlin-benchmark"

@@ -1,242 +1,150 @@
 package electionguard
 
-import mu.KotlinLogging
+import io.kotest.property.checkAll
+import io.kotest.property.forAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.DynamicTest.dynamicTest
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestFactory
-import org.junit.jupiter.api.assertThrows
-import org.quicktheories.QuickTheory.qt
-import org.quicktheories.generators.SourceDSL.integers
 
-private val logger = KotlinLogging.logger {}
-
-class GroupTest {
-    @Test
+class GroupTest(val context: GroupContext) {
     fun basics() {
-        val three = 3.toElementModP()
-        val four = 4.toElementModP()
-        val seven = 7.toElementModP()
+        val three = 3.toElementModQ(context)
+        val four = 4.toElementModQ(context)
+        val seven = 7.toElementModQ(context)
         assertEquals(seven, three + four)
-        assertEquals("3", three.base10())
-        assertEquals("3", three.base16())
     }
 
-    @Test
     fun comparisonOperations() {
-        val three = 3.toElementModP()
-        val four = 4.toElementModP()
+        val three = 3.toElementModQ(context)
+        val four = 4.toElementModQ(context)
 
         assertTrue(three < four)
         assertTrue(three <= four)
         assertTrue(four > three)
         assertTrue(four >= four)
-
-        assertTrue(three < 4)
-        assertTrue(four > 2)
-        assertTrue(four > 2L)
-        assertTrue(four > 2.0)
     }
 
-    @Test
     fun generatorsWork() {
-        qt().forAll(elementsModP()).check { it.inBounds() }
-
-        qt().forAll(elementsModQ()).check { it.inBounds() }
-    }
-
-    @Test
-    fun validResiduesForGPowP() {
-        qt().forAll(validElementsModP()).check { it.isValidResidue() }
-    }
-
-    @Test
-    fun binaryArrayRoundTrip() {
-        qt().forAll(elementsModP()).check { it == bytesElementModP(it.byteArray()) }
-        qt().forAll(elementsModQ()).check { it == bytesElementModQ(it.byteArray()) }
-    }
-
-    @Test
-    fun base64RoundTrip() {
-        qt().forAll(elementsModP()).check { it == base64ElementModP(it.base64()) }
-        qt().forAll(elementsModQ()).check { it == base64ElementModQ(it.base64()) }
-    }
-
-    @Test
-    fun base16RoundTrip() {
-        qt().forAll(elementsModP()).check { it == base16ElementModP(it.base16()) }
-        qt().forAll(elementsModQ()).check { it == base16ElementModQ(it.base16()) }
-    }
-
-    @Test
-    fun base10RoundTrip() {
-        qt().forAll(elementsModP()).check { it == base10ElementModP(it.base10()) }
-        qt().forAll(elementsModQ()).check { it == base10ElementModQ(it.base10()) }
-    }
-
-    @TestFactory
-    fun baseConversionFails(): Iterable<DynamicTest> {
-        logger.warn {
-            "About to test for errors: logs will have many errors, but the tests should pass"
+        runProperty {
+            forAll(elementsModP(context)) { it.inBounds() }
+            forAll(elementsModQ(context)) { it.inBounds() }
         }
+    }
+
+    fun validResiduesForGPowP() {
+        runProperty {
+            forAll(propTestFastConfig, validElementsModP(context)) { it.isValidResidue() }
+        }
+    }
+
+    fun binaryArrayRoundTrip() {
+        runProperty {
+            forAll(elementsModP(context)) { it == context.binaryToElementModP(it.byteArray()) }
+            forAll(elementsModQ(context)) { it == context.binaryToElementModQ(it.byteArray()) }
+        }
+    }
+
+    fun base64RoundTrip() {
+        runProperty {
+            forAll(elementsModP(context)) { it == context.base64ToElementModP(it.base64()) }
+            forAll(elementsModQ(context)) { it == context.base64ToElementModQ(it.base64()) }
+        }
+    }
+
+    fun baseConversionFails(): Iterable<DynamicTest> {
         return listOf("", "@@", "-10", "1234567890".repeat(1000))
             .flatMap {
                 listOf(
-                    dynamicTest("base64ElementModP($it)") { assertNull(base64ElementModP(it)) },
-                    dynamicTest("base64ElementModQ($it)") { assertNull(base64ElementModQ(it)) },
-                    dynamicTest("base16ElementModP($it)") { assertNull(base16ElementModP(it)) },
-                    dynamicTest("base16ElementModQ($it)") { assertNull(base16ElementModQ(it)) },
-                    dynamicTest("base10ElementModP($it)") { assertNull(base10ElementModP(it)) },
-                    dynamicTest("base10ElementModQ($it)") { assertNull(base10ElementModQ(it)) },
+                    dynamicTest("base64ElementModP($it)") {
+                        assertNull(context.base64ToElementModP(it))
+                    },
+                    dynamicTest("base64ElementModQ($it)") {
+                        assertNull(context.base64ToElementModQ(it))
+                    },
                 )
             }
     }
 
-    @Test
     fun additionBasics() {
-        qt().forAll(elementsModP("a"), elementsModP("b"))
-            .checkAssert { a, b ->
-                val expected = (a.element + b.element) % P
-                val actual = a + b
-                assertEquals(expected, actual.element)
-                assertEquals("[\"addP\",\"a\",\"b\"]", actual.formula.toString())
-            }
-        qt().forAll(elementsModQ("a"), elementsModQ("b"))
-            .checkAssert { a, b ->
-                val expected = (a.element + b.element) % Q
-                val actual = a + b
-                val actual2 = addQ(a, b)
-                assertEquals(expected, actual.element)
-                assertEquals(expected, actual2.element)
-                assertEquals("[\"addQ\",\"a\",\"b\"]", actual.formula.toString())
-                assertEquals("[\"addQ\",\"a\",\"b\"]", actual2.formula.toString())
-            }
-    }
-
-    @Test
-    fun multiplicationBasicsP() {
-        qt().forAll(elementsModP("a"), elementsModP("b"))
-            .checkAssert { a, b ->
-                val expected = (a.element * b.element) % P
-                val actual = a * b
-                val actual2 = multP(a, b)
-                assertEquals(expected, actual.element)
-                assertEquals(expected, actual2.element)
-                assertEquals("[\"multP\",\"a\",\"b\"]", actual.formula.toString())
-                assertEquals("[\"multP\",\"a\",\"b\"]", actual2.formula.toString())
-            }
-    }
-
-    @Test
-    fun multiplicationBasicsQ() {
-        qt().forAll(elementsModQ("a"), elementsModQ("b"))
-            .checkAssert { a, b ->
-                val expected = (a.element * b.element) % Q
-                val actual = a * b
-                assertEquals(expected, actual.element)
-                assertEquals("[\"multQ\",\"a\",\"b\"]", actual.formula.toString())
-            }
-    }
-
-    @Test
-    fun subtractionBasics() {
-        qt().forAll(elementsModP("a"), elementsModP("b"))
-            .checkAssert { a, b ->
-                val expected = (a.element - b.element) % P
-                val actual = a - b
-                assertEquals(expected, actual.element)
-                assertEquals("[\"minusP\",\"a\",\"b\"]", actual.formula.toString())
-            }
-        qt().forAll(elementsModQ("a"), elementsModQ("b"))
-            .checkAssert { a, b ->
-                val expected = (a.element - b.element) % Q
-                val actual = a - b
-                assertEquals(expected, actual.element)
-                assertEquals("[\"minusQ\",\"a\",\"b\"]", actual.formula.toString())
-            }
-    }
-
-    @Test
-    fun negation() {
-        qt().forAll(elementsModQ("a"))
-            .checkAssert {
-                assertEquals(ZERO_MOD_Q, negateQ(it) + it)
-                assertEquals("[\"negQ\",\"a\"]", negateQ(it).formula.toString())
-            }
-    }
-
-    @Test
-    fun randRangeQ() {
-        qt().forAll(integers().all())
-            .checkAssert {
-                if (it >= 0) {
-                    assertTrue(randRangeQ(it).inBounds())
-                } else {
-                    assertThrows<GroupException> { randRangeQ(it) }
+        runProperty {
+            checkAll(elementsModQ(context), elementsModQ(context), elementsModQ(context))
+                { a, b, c ->
+                    assertEquals(a, a + context.ZERO_MOD_Q) // identity
+                    assertEquals(a + b, b + a) // commutative
+                    assertEquals(a + (b + c), (a + b) + c) // associative
                 }
+        }
+    }
+
+    fun multiplicationBasicsP() {
+        runProperty {
+            checkAll(
+                elementsModPNoZero(context),
+                elementsModPNoZero(context),
+                elementsModPNoZero(context)
+            ) { a, b, c ->
+                assertEquals(a, a * context.ONE_MOD_P) // identity
+                assertEquals(a * b, b * a) // commutative
+                assertEquals(a * (b * c), (a * b) * c) // associative
             }
+        }
     }
 
-    @Test
+    fun multiplicationBasicsQ() {
+        runProperty {
+            checkAll(
+                elementsModQNoZero(context),
+                elementsModQNoZero(context),
+                elementsModQNoZero(context)
+            ) { a, b, c ->
+                assertEquals(a, a * context.ONE_MOD_Q) // identity
+                assertEquals(a * b, b * a) // commutative
+                assertEquals(a * (b * c), (a * b) * c) // associative
+            }
+        }
+    }
+
+    fun subtractionBasics() {
+        runProperty {
+            checkAll(
+                elementsModQNoZero(context),
+                elementsModQNoZero(context),
+                elementsModQNoZero(context)
+            ) { a, b, c ->
+                assertEquals(a, a - context.ZERO_MOD_Q)
+                assertEquals(a - b, -(b - a))
+                assertEquals(a - (b - c), (a - b) + c)
+            }
+        }
+    }
+
+    fun negation() {
+        runProperty { forAll(elementsModQ(context)) { context.ZERO_MOD_Q == (-it) + it } }
+    }
+
     fun multiplicativeInversesP() {
-        qt().forAll(elementsModPNoZero()).check { it.multInv() * it == ONE_MOD_P }
+        runProperty {
+            forAll(elementsModPNoZero(context)) { it.multInv() * it == context.ONE_MOD_P }
+        }
     }
 
-    @Test
     fun multiplicativeInversesQ() {
-        qt().forAll(elementsModQNoZero()).check { it.multInv() * it == ONE_MOD_Q }
+        runProperty {
+            forAll(elementsModQNoZero(context)) { it.multInv() * it == context.ONE_MOD_Q }
+        }
     }
 
-    @Test
     fun divisionP() {
-        qt().forAll(elementsModPNoZero()).check { it divP it == ONE_MOD_P }
+        runProperty { forAll(elementsModPNoZero(context)) { it / it == context.ONE_MOD_P } }
     }
 
-    @Test
-    fun divisionQ() {
-        qt().forAll(elementsModQNoZero()).check { it divQ it == ONE_MOD_Q }
-    }
-
-    @Test
-    fun moreComplexFormulas() {
-        assertEquals("\"0\"", ZERO_MOD_Q.formula.toString())
-        assertEquals("\"0\"", ZERO_MOD_P.formula.toString())
-        assertEquals("\"1\"", ONE_MOD_Q.formula.toString())
-        assertEquals("\"1\"", ONE_MOD_P.formula.toString())
-        assertEquals("\"2\"", TWO_MOD_Q.formula.toString())
-        assertEquals("\"2\"", TWO_MOD_P.formula.toString())
-
-        val a = 0.toElementModP("a")
-        val b = 0.toElementModQ("b")
-        val c = 0.toElementModQ("c")
-        val r = a * gPowP(b + c)
-
-        // we've got three different ways to convert these things to strings
-
-        assertEquals("""["multP","a",["gPowP",["addQ","b","c"]]]""", r.formula.toString())
-        assertEquals(
-            """ElementModP(formula = ["multP","a",["gPowP",["addQ","b","c"]]], element = 0)""",
-            r.toString()
-        )
-
-        // relatively short equations become one-liners
-        assertEquals("""ElementModP["multP","a",["gPowP",["addQ","b","c"]]]""", r.toFormulaString())
-
-        val bigger = hashElements(r, r, r, r, r, r, r)
-        val expected =
-            """ElementModQ[
-    "hash",
-    ["multP","a",["gPowP",["addQ","b","c"]]],
-    ["multP","a",["gPowP",["addQ","b","c"]]],
-    ["multP","a",["gPowP",["addQ","b","c"]]],
-    ["multP","a",["gPowP",["addQ","b","c"]]],
-    ["multP","a",["gPowP",["addQ","b","c"]]],
-    ["multP","a",["gPowP",["addQ","b","c"]]],
-    ["multP","a",["gPowP",["addQ","b","c"]]]
-]"""
-        assertEquals(expected, bigger.toFormulaString())
+    fun exponentiation() {
+        runProperty {
+            forAll(propTestFastConfig, elementsModQ(context), elementsModQ(context)) { a, b ->
+                context.gPowP(a) * context.gPowP(b) == context.gPowP(a + b)
+            }
+        }
     }
 }

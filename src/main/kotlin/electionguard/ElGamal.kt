@@ -6,15 +6,15 @@ typealias ElGamalPublicKey = ElementModP
 /** A public and private keypair, suitable for doing ElGamal cryptographic operations. */
 data class ElGamalKeypair(val secretKey: ElGamalSecretKey, val publicKey: ElGamalPublicKey)
 
+val ElGamalKeypair.context: GroupContext
+    get() = this.publicKey.context
+
 /**
  * An "exponential ElGamal ciphertext" (i.e., with the plaintext in the exponent to allow for
- * homomorphic addition). Create one with `elgamal_encrypt`. Add them with `elgamal_add`. Decrypt
- * using one of the supplied instance methods. (See
+ * homomorphic addition). (See
  * [ElGamal 1982](https://ieeexplore.ieee.org/abstract/document/1057074))
  */
-data class ElGamalCiphertext(val pad: ElementModP, val data: ElementModP) : CryptoHashable {
-    override fun cryptoHash() = hashElements(pad, data)
-}
+data class ElGamalCiphertext(val pad: ElementModP, val data: ElementModP)
 
 /**
  * Given an ElGamal secret key, derives the corresponding secret/public key pair.
@@ -22,14 +22,14 @@ data class ElGamalCiphertext(val pad: ElementModP, val data: ElementModP) : Cryp
  * @throws GroupException if the secret key is less than two
  */
 fun elGamalKeyPairFromSecret(secret: ElGamalSecretKey) =
-    if (secret < 2.toElementModQ())
-        throw GroupException("secret key must be in [2, Q)")
+    if (secret < 2.toElementModQ(secret.context))
+        throw ArithmeticException("secret key must be in [2, Q)")
     else
-        ElGamalKeypair(secret, gPowP(secret))
+        ElGamalKeypair(secret, secret.context.gPowP(secret))
 
 /** Generates a random ElGamal keypair. */
-fun elGamalKeyPairFromRandom() =
-    elGamalKeyPairFromSecret(randRangeQ(minimum = 2).updateFormula("randomSecretKey"))
+fun elGamalKeyPairFromRandom(ctx: GroupContext) =
+    elGamalKeyPairFromSecret(ctx.randomElementModQ(minimum = 2))
 
 /**
  * Uses an ElGamal public key to encrypt a message. An optional nonce can be specified to make this
@@ -39,22 +39,22 @@ fun elGamalKeyPairFromRandom() =
  */
 fun ElGamalPublicKey.encrypt(
     message: Int,
-    nonce: ElementModQ = randRangeQ(minimum = 1, "nonce")
+    nonce: ElementModQ = context.randomElementModQ(minimum = 1)
 ): ElGamalCiphertext {
 
-    if (nonce == ZERO_MOD_Q) {
-        throw GroupException("Can't use a zero nonce for ElGamal encryption")
+    if (nonce == context.ZERO_MOD_Q) {
+        throw ArithmeticException("Can't use a zero nonce for ElGamal encryption")
     }
 
     if (message < 0) {
-        throw GroupException("Can't encrypt a negative message")
+        throw ArithmeticException("Can't encrypt a negative message")
     }
 
     // We don't have to check if message >= Q, because it's an integer, and Q
     // is much larger than that.
 
-    val pad = gPowP(nonce)
-    val expM = gPowP(message)
+    val pad = context.gPowP(nonce)
+    val expM = context.gPowPSmall(message)
     val keyN = this powP nonce
     val data = expM * keyN
 
@@ -65,14 +65,16 @@ fun ElGamalPublicKey.encrypt(
  * Uses an ElGamal public key to encrypt a message. An optional nonce can be specified to make this
  * deterministic, or it will be chosen at random.
  */
-fun ElGamalKeypair.encrypt(message: Int, nonce: ElementModQ = randRangeQ(minimum = 1, "nonce")) =
-    publicKey.encrypt(message, nonce)
+fun ElGamalKeypair.encrypt(
+    message: Int,
+    nonce: ElementModQ = context.randomElementModQ(minimum = 1)
+) = publicKey.encrypt(message, nonce)
 
 /** Uses an ElGamal secret key to decrypt a message. If the decryption fails, `null` is returned. */
 fun ElGamalSecretKey.decrypt(ciphertext: ElGamalCiphertext): Int? {
     val blind = ciphertext.pad powP this
-    val gPowM = ciphertext.data divP blind
-    return dLog(gPowM)
+    val gPowM = ciphertext.data / blind
+    return context.dLog(gPowM)
 }
 
 /** Decrypts using the secret key. */
@@ -90,8 +92,8 @@ fun ElGamalCiphertext.decrypt(keypair: ElGamalKeypair) = keypair.secretKey.decry
  */
 fun ElGamalPublicKey.decryptWithNonce(ciphertext: ElGamalCiphertext, nonce: ElementModQ): Int? {
     val blind = this powP nonce
-    val gPowM = ciphertext.data divP blind
-    return dLog(gPowM)
+    val gPowM = ciphertext.data / blind
+    return context.dLog(gPowM)
 }
 
 /**
@@ -120,60 +122,6 @@ fun Iterable<ElGamalCiphertext>.encryptedSum(): ElGamalCiphertext =
     // an exception on that, and otherwise we're fine.
     asSequence()
         .let {
-            it.ifEmpty { throw GroupException("Cannot sum an empty list of ciphertexts") }
+            it.ifEmpty { throw ArithmeticException("Cannot sum an empty list of ciphertexts") }
                 .reduce { a, b -> a + b }
         }
-
-/**
- * Combines multiple ElGamal public keys into a single public key. The corresponding secret keys can
- * do "partial decryption" operations that can be later combined. See, e.g.,
- * [ElGamalCiphertext.partialDecryption] and [combinePartialDecryptions].
- */
-fun combinePublicKeys(vararg publicKeys: ElGamalPublicKey): ElGamalPublicKey {
-    // TODO: implement this for part 1
-    return multP(*publicKeys)
-}
-
-/**
- * Combines multiple ElGamal public keys into a single public key. The corresponding secret keys can
- * do "partial decryption" operations that can be later combined. See, e.g.,
- * [ElGamalCiphertext.partialDecryption] and [combinePartialDecryptions].
- */
-fun Iterable<ElGamalPublicKey>.combinePublicKeys(): ElGamalPublicKey =
-    combinePublicKeys(*(toList().toTypedArray()))
-
-typealias ElGamalPartialDecryption = ElementModP
-
-/**
- * Computes a partial decryption of the ciphertext with a secret key. See
- * [ElGamalCiphertext.combinePartialDecryptions] for extracting the plaintext.
- */
-fun ElGamalSecretKey.partialDecryption(ciphertext: ElGamalCiphertext): ElGamalPartialDecryption {
-    // TODO: implement this for part 1
-    return ciphertext.pad powP this
-}
-
-/** Computes a partial decryption of the ciphertext. */
-fun ElGamalKeypair.partialDecryption(ciphertext: ElGamalCiphertext) =
-    secretKey.partialDecryption(ciphertext)
-
-/** Computes a partial decryption of the ciphertext. */
-fun ElGamalCiphertext.partialDecryption(secretKey: ElGamalSecretKey) =
-    secretKey.partialDecryption(this)
-
-/** Computes a partial decryption of the ciphertext. */
-fun ElGamalCiphertext.partialDecryption(keypair: ElGamalKeypair) =
-    keypair.secretKey.partialDecryption(this)
-
-/**
- * Given a series of partial decryptions of the ciphertext, combines them together to complete the
- * decryption process.
- */
-fun ElGamalCiphertext.combinePartialDecryptions(
-    vararg partialDecryptions: ElGamalPartialDecryption
-): Int? {
-    // TODO: implement this for part 1
-    val blind = multP(*partialDecryptions)
-    val gPowM = data divP blind
-    return dLog(gPowM)
-}

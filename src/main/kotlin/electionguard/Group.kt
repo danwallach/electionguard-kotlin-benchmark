@@ -1,660 +1,273 @@
 package electionguard
 
-import java.math.BigInteger
 import java.security.SecureRandom
-import java.util.*
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import mu.KotlinLogging
-
-// Constants used by ElectionGuard
-internal val big189 = BigInteger.valueOf(189)
-internal val bigMinus1 = BigInteger.valueOf(-1)
-internal val big0 = BigInteger.valueOf(0)
-internal val big1 = BigInteger.valueOf(1)
-internal val big2 = BigInteger.valueOf(2)
-
-internal val jsonUnknown: JsonElement = JsonPrimitive("?")
 
 /**
- * Helper function to convert [Long] values to [BigInteger], ensuring that small values go to
- * pre-allocated instances, and delegating to [BigInteger.valueOf] in the general case.
+ * The GroupContext class provides all the necessary context to define the arithmetic that we'll be
+ * doing, such as the moduli P and Q, the generator G, and so forth. This also allows us to
+ * encapsulate acceleration data structures that we'll use to support various operations.
  */
-fun Long.toBigInteger(): BigInteger =
-    when (this) {
-        -1L -> bigMinus1
-        0L -> big0
-        1L -> big1
-        2L -> big2
-        else -> BigInteger.valueOf(this)
-    }
+interface GroupContext {
+    /**
+     * Returns whether we're using "production primes" (bigger, slower, secure) versus "test primes"
+     * (smaller, faster, but insecure).
+     */
+    fun isProductionStrength(): Boolean
 
-/**
- * Helper function to convert [Int] values to [BigInteger], ensuring that small values go to
- * pre-allocated instances, and delegating to [BigInteger.valueOf] in the general case.
- */
-fun Int.toBigInteger() = toLong().toBigInteger()
+    /** Useful constant: zero mod p */
+    val ZERO_MOD_P: ElementModP
 
-/**
- * Helper function to convert [Number] values to [BigInteger], ensuring that small values go to
- * pre-allocated instances, and delegating to [BigInteger.valueOf] in the general case.
- */
-fun Number.toBigInteger() = toLong().toBigInteger()
+    /** Useful constant: one mod p */
+    val ONE_MOD_P: ElementModP
 
-private val logger = KotlinLogging.logger {}
+    /** Useful constant: two mod p */
+    val TWO_MOD_P: ElementModP
 
-/** Thrown if a computation is out of bounds, typically an input out of range */
-class GroupException(s: String) : RuntimeException(s)
+    /** Useful constant: the group generator */
+    val G_MOD_P: ElementModP
 
-val Q: BigInteger = big2.pow(256) - big189
+    /** Useful constant: the group generator, squared */
+    val G_SQUARED_MOD_P: ElementModP
 
-val P: BigInteger =
-    BigInteger(
-        "104438888141315250669175271071662438257996424904738378038423348328395390797155364353772" +
-            "99931268758839021736340177774163605029260829463779429557044985420976148418252467735" +
-            "80689398386320439747911160897731551074903967243883427132918813748016269754522343505" +
-            "28589881677721176191239277291448552115552164104927344620757896193984061946614580685" +
-            "92750534765609732951587038233957102103293147097152392517365523840808458360487786673" +
-            "18931418338422443891025911884723433084701207771901944593286624979917391350564662632" +
-            "72370300796422984915475619689061525228653308964318490270692608174414928951741824915" +
-            "36341783420753818741316460134447968945821068705315358036662545796026324531037414525" +
-            "69793905551901541856173251385047414840392753585581909950158046256810542678368121278" +
-            "50996052095762473794291460031064660979266501285839738143575590285131207124810259944" +
-            "23089513270392508188924937674233296637837091907161620235296692173009397831714158082" +
-            "33146823000766917789286154006042281423733706462905243774854543127239500245873582012" +
-            "66366643058386277816736954760301634424272959224454460827940599975939109977566774640" +
-            "16336683086981867211722382550079626585644438589276348504157753488390520266757856948" +
-            "26386930175303143450046575460843879941791946313299322976993405829119",
-        10
-    )
+    /** Useful constant: the modulus of the ElementModQ group */
+    val Q_MOD_P: ElementModP
 
-val R: BigInteger = ((P - big1) * Q.modPow(bigMinus1, P)).mod(P)
+    /** Useful constant: zero mod q */
+    val ZERO_MOD_Q: ElementModQ
 
-val G: BigInteger =
-    BigInteger(
-        "142451090912947413867511543423235210035430598652619116033406695222181598980700933278385" +
-            "95045175067897363301047764229640327930333001123401070596314469603183633790452807428" +
-            "41677571792318294958387538183391237088987457211208696630049860736450176449481195601" +
-            "78811988274003274032520391844488888776447816105948010537532354533825085439069935712" +
-            "48387749420874609737451803650021788641249940534081464232937193671929586747339353451" +
-            "02171275240622527625501028100485723304324133252782191160441358244291599383377489022" +
-            "87054957873572340069327558769726328407605993995140283935423450354331351595110998777" +
-            "73857622699742816228063106927776147867040336649025152771036361273329385354927395836" +
-            "33020631107257768389266447507072040844725763560689192012379160253851851652487366420" +
-            "50346981945616730195355642732047440763360221304539636481143210501739942596206110151" +
-            "89498335966173440411967562175734606706258335095991140827763942280037063180207172918" +
-            "76992171200340000792388808429668526923329837114363088301121374508220740547997841808" +
-            "99177682425925571728349211859908769605270133866939099610933022896461932957251352385" +
-            "95082039133488721800071459503353417574248679728577942863659802016004283193163470835" +
-            "709405666994892499382890912238098413819320185166580019604608311466",
-        10
-    )
+    /** Useful constant: one mod q */
+    val ONE_MOD_Q: ElementModQ
 
-val Q_MINUS_ONE: BigInteger = Q - big1
-
-/**
- * [ElementModP] and [ElementModQ] both implement this interface, which is useful for functions and
- * methods that can work on either type. The [formula] field allows arithmetic operations on
- * elements to retain the formula used to build them. These are useful for debugging, but can
- * potentially reveal secrets, so they're not serialized.
- *
- * Note that formulas are not considered as part of element equality testing or hashing.
- */
-sealed interface Element {
-    val element: BigInteger
-
-    val formula: JsonElement
+    /** Useful constant: two mod q */
+    val TWO_MOD_Q: ElementModQ
 
     /**
-     * Converts the [formula] to a printable string, indented, suitable for human readability.
-     * Ignores the [element]. Alternately, consider [toString] to get both, in human-readable
-     * single-line format, or you can call `formula.toString()`, to get a single-line JSON version
-     * of the formula, suitable for machine-readability. The JSON expression is roughly the same as
-     * an equivalent LISP-style s-expression.
+     * Identifies whether the two GroupContexts are "compatible", so elements made in one context
+     * would work in the other. Groups with the same primes should be compatible.
      */
-    fun toFormulaString(): String
+    fun isCompatible(ctx: GroupContext): Boolean
+
+    /**
+     * Converts a [ByteArray] to an [ElementModP]. The input array is assumed to be in big-endian
+     * byte-order: the most significant byte is in the zeroth element; this is the same behavior as
+     * Java's BigInteger. Guarantees the result is in [minimum, P), by computing the result mod P.
+     */
+    fun safeBinaryToElementModP(b: ByteArray, minimum: Int = 0): ElementModP
+
+    /**
+     * Converts a [ByteArray] to an [ElementModQ]. The input array is assumed to be in big-endian
+     * byte-order: the most significant byte is in the zeroth element; this is the same behavior as
+     * Java's BigInteger. Guarantees the result is in [minimum, Q), by computing the result mod Q.
+     */
+    fun safeBinaryToElementModQ(b: ByteArray, minimum: Int = 0): ElementModQ
+
+    /**
+     * Converts a [ByteArray] to an [ElementModP]. The input array is assumed to be in big-endian
+     * byte-order: the most significant byte is in the zeroth element; this is the same behavior as
+     * Java's BigInteger. Returns null if the number is out of bounds.
+     */
+    fun binaryToElementModP(b: ByteArray): ElementModP?
+
+    /**
+     * Converts a [ByteArray] to an [ElementModQ]. The input array is assumed to be in big-endian
+     * byte-order: the most significant byte is in the zeroth element; this is the same behavior as
+     * Java's BigInteger. Returns null if the number is out of bounds.
+     */
+    fun binaryToElementModQ(b: ByteArray): ElementModQ?
+
+    /**
+     * Converts a [ULong] to an [ElementModP]. Out-of-bounds might happen with the test group,
+     * causing an exception. Will never happen with the production group.
+     */
+    fun ulongToElementModP(u: ULong): ElementModP
+
+    /**
+     * Converts a [ULong] to an [ElementModQ]. Out-of-bounds might happen with the test group,
+     * causing an exception. Will never happen with the production group.
+     */
+    fun ulongToElementModQ(u: ULong): ElementModQ
+
+    /**
+     * Computes G^e mod p, where G is our generator. Optimized for small values of e, which occur
+     * commonly when encoding vote counters (G raised to 0 or 1).
+     */
+    fun gPowPSmall(e: Int): ElementModP
+
+    /** Computes G^e mod p, where G is our generator */
+    fun gPowP(e: ElementModQ): ElementModP
+
+    /**
+     * Computes the discrete log, base g, of p. Only yields an answer for "small" exponents,
+     * otherwise returns null.
+     */
+    fun dLog(p: ElementModP): Int?
 }
 
-private fun Element.toStringHelper(className: String): String {
-    val formulaStr = if (formula == jsonUnknown) "" else "formula = ${formula}, "
-    val elementStr = element.toString(10)
-    return "$className(${formulaStr}element = $elementStr)"
+interface ElementModQ : Element, Comparable<ElementModQ> {
+    /** Modular addition */
+    operator fun plus(other: ElementModQ): ElementModQ
+
+    /** Modular subtraction */
+    operator fun minus(other: ElementModQ): ElementModQ
+
+    /** Modular multiplication */
+    operator fun times(other: ElementModQ): ElementModQ
+
+    /** Finds the multiplicative inverse */
+    fun multInv(): ElementModQ
+
+    /** Computes the additive inverse */
+    operator fun unaryMinus(): ElementModQ
+
+    /** Multiplies by the modular inverse of [denominator] */
+    infix operator fun div(denominator: ElementModQ): ElementModQ
+
+    /** Allows elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
+    override operator fun compareTo(other: ElementModQ): Int
 }
 
-private fun JsonElement.toFormulaString(className: String) =
-    className +
-        prettyPrint(true)
-            .let { formulaStr ->
-                if (formulaStr.startsWith("[") || formulaStr.startsWith("{"))
-                    formulaStr
-                else
-                    "($formulaStr)"
-            }
+interface ElementModP : Element, Comparable<ElementModP> {
+    /**
+     * Validates that this element is a quadratic residue (and is reachable from
+     * [GroupContext.gPowP]). Returns true if everything is good.
+     */
+    fun isValidResidue(): Boolean
 
-/**
- * General-purpose holder of elements in [0, P). Don't use the constructor directly. Instead, use
- * the helper functions, like [Long.toElementModP] or [base64ElementModP], which will check for
- * errors.
- *
- * Note that the [formula] is "transient", which means that serialization libraries will hopefully
- * skip it rather than writing it out.
- */
-data class ElementModP(
-    override val element: BigInteger,
-    @Transient
-    override val formula: JsonElement = jsonUnknown
-) : Element {
-    constructor(
-        element: BigInteger,
-        formulaStr: String
-    ) : this(element, if (formulaStr == "?") jsonUnknown else JsonPrimitive(formulaStr))
+    /** Computes b^e mod p */
+    infix fun powP(e: ElementModQ): ElementModP
 
-    override fun equals(other: Any?) =
-        when (other) {
-            is Element -> other.element == element
-            else -> false
-        }
+    /** Modular multiplication */
+    operator fun times(other: ElementModP): ElementModP
 
-    override fun hashCode() = element.hashCode()
+    /** Finds the multiplicative inverse */
+    fun multInv(): ElementModP
 
-    override fun toString() = toStringHelper("ElementModP")
+    /** Multiplies by the modular inverse of [denominator] */
+    infix operator fun div(denominator: ElementModP): ElementModP
 
-    override fun toFormulaString() = formula.toFormulaString("ElementModP")
+    /** Allows elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
+    override operator fun compareTo(other: ElementModP): Int
 }
 
+// 4096-bit P and 256-bit Q primes, plus generator G and cofactor R
+internal val b64ProductionP =
+    "AP//////////////////////////////////////////k8Rn432wx6TRvj+BAVLLVqHOzDr2XMAZDAPfNHCa/72OS1n6A6nw7tBknMtiEFfREFaukTITWgjkO0Zz10uv6ljeuHjMhtcz2+e/OBVLNs+KltFWeJmqrgwJ1Mi2t7hv0qHqHeYv+GQ+x8Jxgnl3Il5qwvC9YcdGlhVCo8476l21T+cOY+bQn4/ChljoBWekfP3mDudB5dhae9RpMc7YIgNlWUlkuDmJb8qrzMmzGVnAg/Iq0+5ZHDL6ssdEjyoFfbLbSe5S4BgnQeU4ZfAEzI5wS3xcQL8wTE2MTxPt9gR8VVMC0iONjOEd8kJPG2bCxdI40HRNtnmvKJBIcDH5wK6hxLtv6VVO5Sj98bBeWyViI7LwkhXzcZ+cfMxp3fFy0NYjQhf8wAN/GLk+9TiRMLemYeXCblQhQGi7yv6jKmeBi9MHWtH1x+nMPRc3+ygXG6+E27ZhK3iBwaSOQ5zQOpK/UiJaKzjmVC6fcivOFaOBtXU+qEJ2M4HMroNRKzBRGzLl6NgDYhSa0DCqul86V5i7Iqp+wbbQ8XkD9OIthAc0qoWXP3mpP/uCp1xHwD1D0vnKAtAxmbrO3dRTOlJWav//////////////////////////////////////////"
+internal val b64ProductionQ = "AP////////////////////////////////////////9D"
+internal val b64ProductionP256MinusQ = "AL0="
+internal val b64ProductionR =
+    "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC8k8Rn432wx6TRvj+BAVLLVqHOzDr2XMAZDAPfNHCbivamTAztzy1VnanZfwlcMHbGhgN2GRSNLIbDFxAq+iFIAx8ERArA/wyaQXqJISUS52B7JQHapNOKLBQQxINhSeK9uMgmDmJ8RkaWPv/p4W5JXUi9IVxtjsnRZnZXoqHIUG8hE/+tGaayvHxFdgRWcZGDMJ+HS8ms5XD/2od6orI6LW8pHBVUyi6xLxLNAJuLhzSmStUeuJO9iRdQuFFiJB2QjwyXCYeXWOfoIz6rO/LWq1OvoyqhU61mguWgZIiXyb4YoNUL7OAww0MjNq2RY+M/jn2vSY8UuyhSr/qBSEHrGN1fDolRbVV3dihcFgcdIRGU7hw/NGQgNquIbj7CiILOQAPeozW02TW65LWCNbn7K6txPI9wWhx95CIgIJ1rvKzEZzGGAVZScuSmPjjiSZdUrkk6wajoNGnu81yifCcbx5Lu4hFW5he5IuqPcTwizygtxdY4W7EoaOt4Enj6CrKolY/Mtf/i5cNh/BdEIBIrAWPKSkYwjIxGyR6nRXwTan2f1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kf1Kg=="
+internal val b64ProductionG =
+    "HUHknEd+Feru8MXkrAjUpGwmjNNCT8AdE3ab20NnMhhYe8hsTBRI0AagNpnzq65f6xnilvXRQ8xeSj/IkIjJ9FI9Fm7jrp1fsDwL3Xet1cAX9sVeLsksIm/vXGwd8ufDbZDn6q3gmCQdNAmYO8zStTeek5H7xi+fjZOdEgixYDZ8E0JkEiGJWV7IXIzb5fnTB/RpEsBJMvjBaBWna0aCvWvcDtUrANjTD1nHMdWn/66BZdU8+WZJqsK3Q9pW8U8Z2sxSNvKbGrn5vvxpaXKT1d6ti1v13purbeZ8RXGeVjRKPL3zYJgksbV4406utt0xkKs1cdbWccUSKCwdp702tCUdJYT63qgLnhQUIwdN2bX7g6y96tTIelj/9Rf5d6gwgDcKOwz5ihvCl4xHqsKWEf1sQOL5h1w11QRDqao/SWEdzToNb/PLP6zzFHG9thhguSxZTU5GVpuzn+6t/x/WTINqbW24XGunJBdmt6tWv3OWM7BUFH9xcJIUEulI2eR0AtFbscJXMYYSwSHDa4DrhDPAjn0LcUnjqwqHNaku3Oj/lD4ootzqz8xp7DGJCcsEe+HFhYhEta1E8i7rKJ5MxVT3peLz3qAmh3/5KFGBYHHOAo64aNllzLLSKVqMVb0cBws5sJrgazfSk0O52Jl9wkTEaLmAlwcxc27gGLutuYc="
+
+// 16-bit everything, suitable for accelerated testing
+internal val b64TestP = "AP7z"
+internal val b64TestQ = "f3k="
+internal val b64Test256MinusQ = "AP///////////////////////////////////////4CH"
+internal val b64TestG = "Aw=="
+internal val b64TestR = "Ag=="
+
+// useful for checking the decoders from base64
+internal val intTestP = 65267
+internal val intTestQ = 32633
+internal val intTestG = 3
+internal val intTestR = 2
+
 /**
- * General-purpose holder of elements in [0, Q). Don't use the constructor directly. Instead, use
- * the helper functions, like [Long.toElementModQ] or [base64ElementModQ], which will check for
- * errors.
- *
- * Note that the [formula] is "transient", which means that serialization libraries will hopefully
- * skip it rather than writing it out.
+ * Converts a base-64 string to an [ElementModP]. Returns null if the number is out of bounds or the
+ * string is malformed.
  */
-data class ElementModQ(
-    override val element: BigInteger,
-    @Transient
-    override val formula: JsonElement = jsonUnknown
-) : Element {
-    constructor(
-        element: BigInteger,
-        formulaStr: String
-    ) : this(element, if (formulaStr == "?") jsonUnknown else JsonPrimitive(formulaStr))
+fun GroupContext.base64ToElementModP(s: String): ElementModP? =
+    s.fromBase64()?.let { binaryToElementModP(it) }
 
-    override fun equals(other: Any?) =
-        when (other) {
-            is Element -> other.element == element
-            else -> false
-        }
+/**
+ * Converts a base-64 string to an [ElementModP]. Guarantees the result is in [0, P), by computing
+ * the result mod P.
+ */
+fun GroupContext.safeBase64ToElementModP(s: String): ElementModP =
+    safeBinaryToElementModP(s.fromBase64() ?: ByteArray(1) { 0 })
 
-    override fun hashCode() = element.hashCode()
+/**
+ * Converts a base-64 string to an [ElementModQ]. Guarantees the result is in [0, Q), by computing
+ * the result mod Q.
+ */
+fun GroupContext.safeBase64ToElementModQ(s: String): ElementModQ =
+    safeBinaryToElementModQ(s.fromBase64() ?: ByteArray(1) { 0 })
 
-    override fun toString() = toStringHelper("ElementModQ")
+/**
+ * Converts a base-64 string to an [ElementModQ]. Returns null if the number is out of bounds or the
+ * string is malformed.
+ */
+fun GroupContext.base64ToElementModQ(s: String): ElementModQ? =
+    s.fromBase64()?.let { binaryToElementModQ(it) }
 
-    override fun toFormulaString() = formula.toFormulaString("ElementModQ")
+/** Converts from any [Element] to a base64 string representation. */
+fun Element.base64(): String = byteArray().toBase64()
+
+/** Converts an integer to an ElementModQ, with optimizations when possible for small integers */
+fun Int.toElementModQ(ctx: GroupContext) =
+    if (this < 0)
+        throw NoSuchElementException("no negative numbers allowed")
+    else
+        ctx.ulongToElementModQ(this.toULong())
+
+/** Converts an integer to an ElementModQ, with optimizations when possible for small integers */
+fun Int.toElementModP(ctx: GroupContext) =
+    if (this < 0)
+        throw NoSuchElementException("no negative numbers allowed")
+    else
+        ctx.ulongToElementModP(this.toULong())
+
+interface Element {
+    /**
+     * Every Element knows the [GroupContext] that was used to create it. This simplifies code that
+     * computes with elements, allowing arithmetic expressions to be written in many cases without
+     * needing to pass in the context.
+     */
+    val context: GroupContext
+        get
+
+    /**
+     * Normal computations should ensure that every [Element] is in the modular bounds defined by
+     * the group, but deserialization of hostile inputs or buggy code might not preserve this
+     * property, so it's valuable to have a way to check. This method allows anything in [0, N)
+     * where N is the group modulus.
+     */
+    fun inBounds(): Boolean
+
+    /**
+     * Normal computations should ensure that every [Element] is in the modular bounds defined by
+     * the group, but deserialization of hostile inputs or buggy code might not preserve this
+     * property, so it's valuable to have a way to check. This method allows anything in [1, N)
+     * where N is the group modulus.
+     */
+    fun inBoundsNoZero(): Boolean
+
+    /** Converts from any [Element] to a compact [ByteArray] representation. */
+    fun byteArray(): ByteArray
 }
 
-// constructors, destructors, and validators
+private val rng = SecureRandom.getInstanceStrong()
 
 /**
- * Normal computations should ensure that every [ElementModP] is in [1, P), but deserialization of
- * hostile inputs or buggy code might not preserve this property, so it's valuable to have a way to
- * check. This method allows anything in [0, P).
- */
-fun ElementModP.inBounds() = element >= big0 && element < P
-
-/**
- * Normal computations should ensure that every [ElementModP] is in [1, P), but deserialization of
- * hostile inputs or buggy code might not preserve this property, so it's valuable to have a way to
- * check. This method allows anything in [1, P).
- */
-fun ElementModP.inBoundsNoZero() = element >= big1 && element < P
-
-/**
- * Normal computations should ensure that every [ElementModQ] is in [0, Q), but deserialization of
- * hostile inputs or buggy code might not preserve this property, so it's valuable to have a way to
- * check. This method allows anything in [0, Q).
- */
-fun ElementModQ.inBounds() = element >= big0 && element < Q
-
-/**
- * Normal computations should ensure that every [ElementModQ] is in [0, Q), but deserialization of
- * hostile inputs or buggy code might not preserve this property, so it's valuable to have a way to
- * check. This method allows anything in [1, Q).
- */
-fun ElementModQ.inBoundsNoZero() = element >= big1 && element < Q
-
-private val b64encoder = Base64.getEncoder()
-private val b64decoder = Base64.getDecoder()
-
-/**
- * Converts from any [Element] to a base64 string representation. See [base64ElementModP] and
- * [base64ElementModQ] for inverses.
- */
-fun Element.base64(): String = b64encoder.encodeToString(element.toByteArray())
-
-/**
- * Converts from any [Element] to a base16 (hexadecimal) string representation. See
- * [base16ElementModP] and [base16ElementModQ] for inverses.
- */
-fun Element.base16(): String = element.toString(16)
-
-/**
- * Converts from any [Element] to a base10 (decimal) string representation. See [base10ElementModP]
- * and [base10ElementModQ] for inverses.
- */
-fun Element.base10(): String = element.toString(10)
-
-/**
- * Converts from any [Element] to a compact [ByteArray] representation. See [bytesElementModP] and
- * [bytesElementModQ] for inverses.
- */
-fun Element.byteArray(): ByteArray = element.toByteArray()
-
-/** Allows all elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
-operator fun Element.compareTo(other: Element) = element.compareTo(other.element)
-
-/** Allows all elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
-operator fun Element.compareTo(other: Int) = element.compareTo(other.toBigInteger())
-
-/** Allows all elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
-operator fun Element.compareTo(other: Number) = element.compareTo(other.toBigInteger())
-
-/** Allows all elements to be compared (<, >, <=, etc.) using the usual arithmetic operators. */
-operator fun Element.compareTo(other: Long) = element.compareTo(other.toBigInteger())
-
-/**
- * Converts any BigInteger to an ElementModP. For untrusted input, you should instead use
- * [base64ElementModP], [base16ElementModP], or [base10ElementModP], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the BigInteger is outside [0, P)
- */
-fun BigInteger.toElementModP(formulaStr: String = "?") =
-    if (this < big0 || this >= P) {
-        throw GroupException("value $this out of bounds for ElementModP($formulaStr)")
-    } else {
-        ElementModP(this, formulaStr)
-    }
-
-/**
- * Converts any BigInteger to an ElementModQ. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the BigInteger is outside [0, Q)
- */
-fun BigInteger.toElementModQ(formulaStr: String = "?") =
-    if (this < big0 || this >= Q) {
-        throw GroupException("value $this out of bounds for ElementModQ($formulaStr)")
-    } else {
-        ElementModQ(this, formulaStr)
-    }
-
-/**
- * Converts any BigInteger to an ElementModP. For untrusted input, you should instead use
- * [base64ElementModP], [base16ElementModP], or [base10ElementModP], which log errors and return
- * `null`.
- *
- * @param formula optional [JsonElement] to document the equation used to generate this element
- * @throws GroupException if the BigInteger is outside [0, P)
- */
-fun BigInteger.toElementModP(formula: JsonElement = jsonUnknown) =
-    if (this < big0 || this >= P) {
-        throw GroupException("value $this out of bounds for ElementModP($formula})")
-    } else {
-        ElementModP(this, formula)
-    }
-
-/**
- * Converts any BigInteger to an ElementModQ. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formula optional [JsonElement] to document the equation used to generate this element
- * @throws GroupException if the BigInteger is outside [0, Q)
- */
-fun BigInteger.toElementModQ(formula: JsonElement = jsonUnknown) =
-    if (this < big0 || this >= Q) {
-        throw GroupException("value $this out of bounds for ElementModQ($formula)")
-    } else {
-        ElementModQ(this, formula)
-    }
-
-/**
- * Converts a [Long] to an [ElementModP]. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, P)
- */
-fun Long.toElementModP(formulaStr: String = "?") = toBigInteger().toElementModP(formulaStr)
-
-/**
- * Converts a [Number] to an [ElementModP]. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, P)
- */
-fun Number.toElementModP(formulaStr: String = "?") = toBigInteger().toElementModP(formulaStr)
-
-/**
- * Converts an [Int] to an [ElementModP]. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, P)
- */
-fun Int.toElementModP(formulaStr: String = "?") = toBigInteger().toElementModP(formulaStr)
-
-/**
- * Converts a [Long] to an [ElementModQ]. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, Q)
- */
-fun Long.toElementModQ(formulaStr: String = "?") = toBigInteger().toElementModQ(formulaStr)
-
-/**
- * Converts a [Number] to an [ElementModQ]. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, Q)
- */
-fun Number.toElementModQ(formulaStr: String = "?") = toBigInteger().toElementModQ(formulaStr)
-
-/**
- * Converts an [Int] to an [ElementModQ]. For untrusted input, you should instead use
- * [base64ElementModQ], [base16ElementModQ], or [base10ElementModQ], which log errors and return
- * `null`.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, Q)
- */
-fun Int.toElementModQ(formulaStr: String = "?") = toBigInteger().toElementModQ(formulaStr)
-
-/**
- * Given an arbitrary array of bytes, extracts an [ElementModP].
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, P)
- */
-fun bytesElementModP(s: ByteArray, formulaStr: String = "?") =
-    BigInteger(s).toElementModP(formulaStr)
-
-/**
- * Given an arbitrary array of bytes, extracts an [ElementModQ].
- *
- * @param formulaStr optional string to document the equation used to generate this element
- * @throws GroupException if the input is outside [0, Q)
- */
-fun bytesElementModQ(s: ByteArray, formulaStr: String = "?") =
-    BigInteger(s).toElementModQ(formulaStr)
-
-/**
- * Given an arbitrary array of bytes, extracts an [ElementModP], guaranteeing that the result is a
- * valid [ElementModP] in [0, P) by performing a modulus operation.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun safeBytesElementModP(s: ByteArray, formulaStr: String = "?") =
-    (BigInteger(s) % P).toElementModP(formulaStr)
-
-/**
- * Given an arbitrary array of bytes, extracts an [ElementModQ], guaranteeing that the result is a
- * valid [ElementModQ] in [0, Q) by performing a modulus operation.
- *
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun safeBytesElementModQ(s: ByteArray, formulaStr: String = "?") =
-    (BigInteger(s) % Q).toElementModQ(formulaStr)
-
-/**
- * Given a base64 string containing an [ElementModP], returns that element or `null` if there was
- * some sort of input error. The error is also logged.
- *
- * @param s string input
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun base64ElementModP(s: String, formulaStr: String = "?"): ElementModP? =
-    try {
-        BigInteger(b64decoder.decode(s)).toElementModP(formulaStr)
-    } catch (e: Throwable) {
-        logger.error { "failed to decode $s as an element mod p" }
-        null
-    }
-
-/**
- * Given a base64 string containing an [ElementModQ], returns that element or `null` if there was
- * some sort of input error. The error is also logged.
- *
- * @param s string input
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun base64ElementModQ(s: String, formulaStr: String = "?"): ElementModQ? =
-    try {
-        BigInteger(b64decoder.decode(s)).toElementModQ(formulaStr)
-    } catch (e: Throwable) {
-        logger.error { "failed to decode $s as an element mod q" }
-        null
-    }
-
-/**
- * Given a hexadecimal string containing an [ElementModP], returns that element or `null` if there
- * was some sort of input error. The error is also logged.
- *
- * @param s string input
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun base16ElementModP(s: String, formulaStr: String = "?"): ElementModP? =
-    try {
-        s.toBigInteger(16).toElementModP(formulaStr)
-    } catch (e: Throwable) {
-        logger.error { "failed to decode $s as an element mod p" }
-        null
-    }
-
-/**
- * Given a hexadecimal string containing an [ElementModQ], returns that element or `null` if there
- * was some sort of input error. The error is also logged.
- *
- * @param s string input
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun base16ElementModQ(s: String, formulaStr: String = "?"): ElementModQ? =
-    try {
-        s.toBigInteger(16).toElementModQ(formulaStr)
-    } catch (e: Throwable) {
-        logger.error { "failed to decode $s as an element mod q" }
-        null
-    }
-
-/**
- * Given a decimal string containing an [ElementModP], returns that element or `null` if there was
- * some sort of input error. The error is also logged.
- *
- * @param s string input
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun base10ElementModP(s: String, formulaStr: String = "?"): ElementModP? =
-    try {
-        s.toBigInteger(10).toElementModP(formulaStr)
-    } catch (e: Throwable) {
-        logger.error { "failed to decode $s as an element mod p" }
-        null
-    }
-
-/**
- * Given a decimal string containing an [ElementModQ], returns that element or `null` if there was
- * some sort of input error. The error is also logged.
- *
- * @param s string input
- * @param formulaStr optional string to document the equation used to generate this element
- */
-fun base10ElementModQ(s: String, formulaStr: String = "?"): ElementModQ? =
-    try {
-        s.toBigInteger(10).toElementModQ(formulaStr)
-    } catch (e: Throwable) {
-        logger.error { "failed to decode $s as an element mod q" }
-        null
-    }
-
-/** Returns a copy of the element, but with the new formula */
-fun ElementModP.updateFormula(s: String) = this.copy(formula = JsonPrimitive(s))
-
-/** Returns a copy of the element, but with the new formula */
-fun ElementModP.updateFormula(j: JsonElement) = this.copy(formula = j)
-
-/** Returns a copy of the element, but with the new formula */
-fun ElementModQ.updateFormula(s: String) = this.copy(formula = JsonPrimitive(s))
-
-/** Returns a copy of the element, but with the new formula */
-fun ElementModQ.updateFormula(j: JsonElement) = this.copy(formula = j)
-
-val ZERO_MOD_P = 0.toElementModP("0")
-val ONE_MOD_P = 1.toElementModP("1")
-val TWO_MOD_P = 2.toElementModP("2")
-
-val G_MOD_P = G.toElementModP("G")
-
-val ZERO_MOD_Q = 0.toElementModQ("0")
-val ONE_MOD_Q = 1.toElementModQ("1")
-val TWO_MOD_Q = 2.toElementModQ("2")
-
-/**
- * Validates that this element is a quadratic residue (and is reachable from [gPowP]). Returns true
- * if everything is good.
- */
-fun ElementModP.isValidResidue(): Boolean {
-    val residue = this powP ElementModQ(Q) == ONE_MOD_P
-    return inBounds() && residue
-}
-
-// Kotlin by default gives us the "remainder" operator, which preserves sign,
-// while we want to keep everything greater than zero. We're overriding this
-// behavior within our own code, but being careful not to expose this to
-// external users of this code as a library.
-
-internal operator fun BigInteger.rem(o: BigInteger) = mod(o)
-
-/** Modular addition on ElementModP */
-operator fun ElementModP.plus(other: ElementModP) =
-    ((element + other.element) % P).toElementModP(jexprOf("addP", formula, other.formula))
-
-/** Modular addition on ElementModQ */
-operator fun ElementModQ.plus(other: ElementModQ) =
-    ((element + other.element) % Q).toElementModQ(jexprOf("addQ", formula, other.formula))
-
-/** Modular subtraction on ElementModP */
-operator fun ElementModP.minus(other: ElementModP) =
-    ((element - other.element) % P).toElementModP(jexprOf("minusP", formula, other.formula))
-
-/** Modular subtraction on ElementModQ */
-operator fun ElementModQ.minus(other: ElementModQ) =
-    ((element - other.element) % Q).toElementModQ(jexprOf("minusQ", formula, other.formula))
-
-/** Modular multiplication on ElementModP */
-operator fun ElementModP.times(other: ElementModP) =
-    ((element * other.element) % P).toElementModP(jexprOf("multP", formula, other.formula))
-
-/** Modular multiplication on ElementModP */
-operator fun ElementModQ.times(other: ElementModQ) =
-    ((element * other.element) % Q).toElementModQ(jexprOf("multQ", formula, other.formula))
-
-private val gPow0 = gPowP(ZERO_MOD_Q)
-private val gPow1 = gPowP(ONE_MOD_Q)
-private val gPow2 = gPowP(TWO_MOD_Q)
-
-/**
- * Computes G^e mod p, where G is our generator. Optimized for small values of e, which occur
- * commonly when encoding vote counters (G raised to 0 or 1).
- */
-fun gPowP(e: Int): ElementModP =
-    when (e) {
-        0 -> gPow0
-        1 -> gPow1
-        2 -> gPow2
-        else -> gPowP(e.toElementModQ(e.toString()))
-    }
-
-/** Computes G^e mod p, where G is our generator */
-fun gPowP(e: Element): ElementModP =
-    (G.modPow(e.element, P)).toElementModP(jexprOf("gPowP", e.formula))
-
-/** Computes b^e mod p */
-infix fun Element.powP(e: Element) =
-    (element.modPow(e.element, P)).toElementModP(jexprOf("powP", formula, e.formula))
-
-/** Computes b^e mod q */
-infix fun Element.powQ(e: Element) =
-    (element.modPow(e.element, Q)).toElementModQ(jexprOf("powQ", formula, e.formula))
-
-/** Computes the sum of the given elements, mod q */
-fun addQ(vararg elements: ElementModQ) = elements.asIterable().addQ()
-
-/** Computes the sum of the given elements, mod q */
-fun Iterable<ElementModQ>.addQ() =
-    fold(big0) { s, e -> (s + e.element) % Q }
-        .toElementModQ(jexprOf("addQ", *(map { it.formula }.toTypedArray())))
-
-/** Computes the product of the given elements, mod p */
-fun multP(vararg elements: ElementModP) = elements.asIterable().multP()
-
-/** Computes the product of the given elements, mod p */
-fun Iterable<ElementModP>.multP() =
-    fold(big1) { s, e -> (s * e.element) % P }
-        .toElementModP(jexprOf("multP", *(map { it.formula }.toTypedArray())))
-
-/** Computes the multiplicative inverse mod p */
-fun ElementModP.multInv() = element.modInverse(P).toElementModP(jexprOf("multInvP", formula))
-
-/** Computes the multiplicative inverse mod q */
-fun ElementModQ.multInv() = element.modInverse(Q).toElementModQ(jexprOf("multInvQ", formula))
-
-/** Multiplies by the modular inverse of [denominator], mod p */
-infix fun Element.divP(denominator: Element) =
-    ((element * denominator.element.modInverse(P)) % P)
-        .toElementModP(jexprOf("divP", formula, denominator.formula))
-
-/** Multiplies by the modular inverse of [denominator], mod q */
-infix fun Element.divQ(denominator: Element) =
-    ((element * denominator.element.modInverse(Q)) % Q)
-        .toElementModQ(jexprOf("divQ", formula, denominator.formula))
-
-/** Computes the additive inverse, mod q */
-fun negateQ(a: ElementModQ) = ((Q - a.element) % Q).toElementModQ(jexprOf("negQ", a.formula))
-
-/** Computes (a + b * c) mod q */
-fun aPlusBCQ(a: Element, b: Element, c: Element) =
-    ((a.element + b.element * c.element) % Q)
-        .toElementModQ(jexprOf("aPlusBCQ", a.formula, b.formula, c.formula))
-
-private val randomSource = SecureRandom()
-
-/**
- * Returns a random number in [minimum, Q), where minimum defaults to zero. Uses Java's
- * [SecureRandom] to ensure strong randomness.
+ * Returns a random number in [minimum, Q), where minimum defaults to zero. Promises to use a
+ * "secure" random number generator, such that the results are suitable for use as cryptographic
+ * keys.
  *
  * @throws GroupException if the minimum is negative
  */
-fun randRangeQ(minimum: Int = 0, formulaStr: String = "?"): ElementModQ {
-    if (minimum < 0) {
-        throw GroupException("negative minimum not supported ($minimum")
+fun GroupContext.randomElementModQ(minimum: Int = 0): ElementModQ {
+    val bytes = ByteArray(32)
+    rng.nextBytes(bytes)
+    return safeBinaryToElementModQ(bytes, minimum)
+}
+
+/**
+ * Throughout our bignum arithmetic, every operation needs to check that its operands are compatible
+ * (i.e., that we're not trying to use the test group and the production group interchangeably).
+ * This will verify that compatibility and throw an `ArithmeticException` if they're not.
+ */
+fun GroupContext.assertCompatible(other: GroupContext) {
+    if (!this.isCompatible(other)) {
+        throw ArithmeticException("incompatible group contexts")
     }
-
-    val bytes = ByteArray(32) // we need exactly 256 random bits = 32 bytes
-    randomSource.nextBytes(bytes) // mutates the bytes array
-
-    val minimumBI = minimum.toBigInteger()
-    val big = (BigInteger(bytes) % (Q - minimumBI)) + minimumBI
-    return big.toElementModQ(jexprOf("randQ", JsonPrimitive(formulaStr)))
 }

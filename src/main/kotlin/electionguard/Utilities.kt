@@ -1,5 +1,7 @@
 package electionguard
 
+import java.util.*
+import kotlin.IllegalArgumentException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -35,6 +37,25 @@ fun <A, B, C, D, E, F> tupleOf(a: A, b: B, c: C, d: D, e: E, f: F) = Tuple6(a, b
 
 fun <A, B, C, D, E, F, G> tupleOf(a: A, b: B, c: C, d: D, e: E, f: F, g: G) =
     Tuple7(a, b, c, d, e, f, g)
+
+/** Convert a ByteArray to a Base64 string */
+fun ByteArray.toBase64(): String = Base64.getEncoder().encodeToString(this)
+
+/** Convert a Base64 string to a ByteArray, or null if something failed */
+fun String.fromBase64(): ByteArray? =
+    try {
+        fromBase64OrCrash()
+    } catch (e: IllegalArgumentException) {
+        null
+    }
+
+/**
+ * Convert a Base64 string to a ByteArray, or throws `IllegalArgumentException` if something failed
+ */
+fun String.fromBase64OrCrash(): ByteArray {
+    if (this == "") throw IllegalArgumentException("empty strings not accepted")
+    return Base64.getDecoder().decode(this)
+}
 
 /**
  * Fast helper function for mapping a function on an array and getting another array. Normally
