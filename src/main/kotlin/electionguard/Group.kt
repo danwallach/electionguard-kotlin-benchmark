@@ -139,7 +139,7 @@ interface ElementModP : Element, Comparable<ElementModP> {
     /** Modular multiplication */
     operator fun times(other: ElementModP): ElementModP
 
-    /** Finds the multiplicative inverse */
+    /** Multiplicative inverse */
     fun multInv(): ElementModP
 
     /** Multiplies by the modular inverse of [denominator] */

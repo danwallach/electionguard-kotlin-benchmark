@@ -1,11 +1,11 @@
 package electionguard
 
-// Implementation of "Group" using java.math.BigInteger
+import org.gciatto.kt.math.BigInteger
 
-import java.math.BigInteger
+// Implementation of "Group" using kt-math
 
 private val testGroupContext =
-    GroupContextJMB(
+    GroupContextKTM(
         pBytes = b64TestP.fromBase64OrCrash(),
         qBytes = b64TestQ.fromBase64OrCrash(),
         gBytes = b64TestG.fromBase64OrCrash(),
@@ -15,67 +15,67 @@ private val testGroupContext =
         powRadixOption = PowRadixOption.NO_ACCELERATION
     )
 
-private val productionGroups: HashMap<PowRadixOption, GroupContextJMB> =
+private val productionGroups: HashMap<PowRadixOption, GroupContextKTM> =
     hashMapOf(
         PowRadixOption.NO_ACCELERATION to
-            GroupContextJMB(
-                pBytes = b64ProductionP.fromBase64OrCrash(),
-                qBytes = b64ProductionQ.fromBase64OrCrash(),
-                gBytes = b64ProductionG.fromBase64OrCrash(),
-                rBytes = b64ProductionR.fromBase64OrCrash(),
-                strong = true,
-                name = "production group, no acceleration",
-                powRadixOption = PowRadixOption.NO_ACCELERATION
-            ),
+                GroupContextKTM(
+                    pBytes = b64ProductionP.fromBase64OrCrash(),
+                    qBytes = b64ProductionQ.fromBase64OrCrash(),
+                    gBytes = b64ProductionG.fromBase64OrCrash(),
+                    rBytes = b64ProductionR.fromBase64OrCrash(),
+                    strong = true,
+                    name = "production group, no acceleration",
+                    powRadixOption = PowRadixOption.NO_ACCELERATION
+                ),
         PowRadixOption.LOW_MEMORY_USE to
-            GroupContextJMB(
-                pBytes = b64ProductionP.fromBase64OrCrash(),
-                qBytes = b64ProductionQ.fromBase64OrCrash(),
-                gBytes = b64ProductionG.fromBase64OrCrash(),
-                rBytes = b64ProductionR.fromBase64OrCrash(),
-                strong = true,
-                name = "production group, low memory use",
-                powRadixOption = PowRadixOption.LOW_MEMORY_USE
-            ),
+                GroupContextKTM(
+                    pBytes = b64ProductionP.fromBase64OrCrash(),
+                    qBytes = b64ProductionQ.fromBase64OrCrash(),
+                    gBytes = b64ProductionG.fromBase64OrCrash(),
+                    rBytes = b64ProductionR.fromBase64OrCrash(),
+                    strong = true,
+                    name = "production group, low memory use",
+                    powRadixOption = PowRadixOption.LOW_MEMORY_USE
+                ),
         PowRadixOption.HIGH_MEMORY_USE to
-            GroupContextJMB(
-                pBytes = b64ProductionP.fromBase64OrCrash(),
-                qBytes = b64ProductionQ.fromBase64OrCrash(),
-                gBytes = b64ProductionG.fromBase64OrCrash(),
-                rBytes = b64ProductionR.fromBase64OrCrash(),
-                strong = true,
-                name = "production group, high memory use",
-                powRadixOption = PowRadixOption.HIGH_MEMORY_USE
-            ),
+                GroupContextKTM(
+                    pBytes = b64ProductionP.fromBase64OrCrash(),
+                    qBytes = b64ProductionQ.fromBase64OrCrash(),
+                    gBytes = b64ProductionG.fromBase64OrCrash(),
+                    rBytes = b64ProductionR.fromBase64OrCrash(),
+                    strong = true,
+                    name = "production group, high memory use",
+                    powRadixOption = PowRadixOption.HIGH_MEMORY_USE
+                ),
         PowRadixOption.EXTREME_MEMORY_USE to
-            GroupContextJMB(
-                pBytes = b64ProductionP.fromBase64OrCrash(),
-                qBytes = b64ProductionQ.fromBase64OrCrash(),
-                gBytes = b64ProductionG.fromBase64OrCrash(),
-                rBytes = b64ProductionR.fromBase64OrCrash(),
-                strong = true,
-                name = "production group, extreme memory use",
-                powRadixOption = PowRadixOption.EXTREME_MEMORY_USE
-            )
+                GroupContextKTM(
+                    pBytes = b64ProductionP.fromBase64OrCrash(),
+                    qBytes = b64ProductionQ.fromBase64OrCrash(),
+                    gBytes = b64ProductionG.fromBase64OrCrash(),
+                    rBytes = b64ProductionR.fromBase64OrCrash(),
+                    strong = true,
+                    name = "production group, extreme memory use",
+                    powRadixOption = PowRadixOption.EXTREME_MEMORY_USE
+                )
     )
 
-fun productionGroupJMB(option: PowRadixOption): GroupContextJMB =
+fun productionGroupKTM(option: PowRadixOption): GroupContextKTM =
     productionGroups[option] ?: throw Error("internal error: uninitialized PowRadix storage")
 
-fun allProductionGroupsJMB(): List<GroupContextJMB> = productionGroups.values.toList()
+fun allProductionGroupsKTM(): List<GroupContextKTM> = productionGroups.values.toList()
 
-fun allButExtremeProductionGroupsJMB(): List<GroupContextJMB> =
+fun allButExtremeProductionGroupsKTM(): List<GroupContextKTM> =
     PowRadixOption.values()
         .filter { it != PowRadixOption.EXTREME_MEMORY_USE }
-        .map { productionGroupJMB(it) }
+        .map { productionGroupKTM(it) }
 
-fun testGroupJMB(): GroupContext = testGroupContext
+fun testGroupKTM(): GroupContext = testGroupContext
 
 /** Convert an array of bytes, in big-endian format, to a BigInteger */
-internal fun UInt.toBigIntegerJMB() = BigInteger.valueOf(this.toLong())
-internal fun ByteArray.toBigIntegerJMB() = BigInteger(1, this)
+internal fun UInt.toBigIntegerKTM() = BigInteger.of(this.toLong())
+internal fun ByteArray.toBigIntegerKTM() = BigInteger(1, this)
 
-class GroupContextJMB(
+class GroupContextKTM(
     pBytes: ByteArray,
     qBytes: ByteArray,
     gBytes: ByteArray,
@@ -88,33 +88,33 @@ class GroupContextJMB(
     val q: BigInteger
     val g: BigInteger
     val r: BigInteger
-    val zeroModP: ElementModPJMB
-    val oneModP: ElementModPJMB
-    val twoModP: ElementModPJMB
-    val gModP: ElementModPJMB
-    val gSquaredModP: ElementModPJMB
-    val qModP: ElementModPJMB
-    val zeroModQ: ElementModQJMB
-    val oneModQ: ElementModQJMB
-    val twoModQ: ElementModQJMB
+    val zeroModP: ElementModPKTM
+    val oneModP: ElementModPKTM
+    val twoModP: ElementModPKTM
+    val gModP: ElementModPKTM
+    val gSquaredModP: ElementModPKTM
+    val qModP: ElementModPKTM
+    val zeroModQ: ElementModQKTM
+    val oneModQ: ElementModQKTM
+    val twoModQ: ElementModQKTM
     val productionStrength: Boolean = strong
     val dlogger: DLog
     val powRadix: Lazy<PowRadix>
 
     init {
-        p = pBytes.toBigIntegerJMB()
-        q = qBytes.toBigIntegerJMB()
-        g = gBytes.toBigIntegerJMB()
-        r = rBytes.toBigIntegerJMB()
-        zeroModP = ElementModPJMB(0U.toBigIntegerJMB(), this)
-        oneModP = ElementModPJMB(1U.toBigIntegerJMB(), this)
-        twoModP = ElementModPJMB(2U.toBigIntegerJMB(), this)
-        gModP = ElementModPJMB(g, this)
-        gSquaredModP = ElementModPJMB((g * g) % p, this)
-        qModP = ElementModPJMB(q, this)
-        zeroModQ = ElementModQJMB(0U.toBigIntegerJMB(), this)
-        oneModQ = ElementModQJMB(1U.toBigIntegerJMB(), this)
-        twoModQ = ElementModQJMB(2U.toBigIntegerJMB(), this)
+        p = pBytes.toBigIntegerKTM()
+        q = qBytes.toBigIntegerKTM()
+        g = gBytes.toBigIntegerKTM()
+        r = rBytes.toBigIntegerKTM()
+        zeroModP = ElementModPKTM(0U.toBigIntegerKTM(), this)
+        oneModP = ElementModPKTM(1U.toBigIntegerKTM(), this)
+        twoModP = ElementModPKTM(2U.toBigIntegerKTM(), this)
+        gModP = ElementModPKTM(g, this)
+        gSquaredModP = ElementModPKTM((g * g) % p, this)
+        qModP = ElementModPKTM(q, this)
+        zeroModQ = ElementModQKTM(0U.toBigIntegerKTM(), this)
+        oneModQ = ElementModQKTM(1U.toBigIntegerKTM(), this)
+        twoModQ = ElementModQKTM(2U.toBigIntegerKTM(), this)
         dlogger = DLog(this)
         powRadix = lazy { PowRadix(gModP, powRadixOption) }
     }
@@ -151,18 +151,18 @@ class GroupContextJMB(
         get() = twoModQ
 
     override fun isCompatible(ctx: GroupContext) =
-        ctx is GroupContextJMB && this.productionStrength == ctx.productionStrength
+        ctx is GroupContextKTM && this.productionStrength == ctx.productionStrength
 
     override fun safeBinaryToElementModP(b: ByteArray, minimum: Int): ElementModP {
         if (minimum < 0) {
             throw IllegalArgumentException("minimum $minimum may not be negative")
         }
 
-        val tmp = b.toBigIntegerJMB() % p
+        val tmp = b.toBigIntegerKTM() % p
 
-        val mv = minimum.toBigInteger()
+        val mv = BigInteger.of(minimum)
         val tmp2 = if (tmp < mv) tmp + mv else tmp
-        val result = ElementModPJMB(tmp2, this)
+        val result = ElementModPKTM(tmp2, this)
 
         return result
     }
@@ -172,13 +172,13 @@ class GroupContextJMB(
             throw IllegalArgumentException("minimum $minimum may not be negative")
         }
 
-        val tmp = b.toBigIntegerJMB() % q
+        val tmp = b.toBigIntegerKTM() % q
 
         //        assert(tmp < q) { "modulo didn't work! $tmp > $q "}
 
-        val mv = minimum.toBigInteger()
+        val mv = BigInteger.of(minimum)
         val tmp2 = if (tmp < mv) tmp + mv else tmp
-        val result = ElementModQJMB(tmp2, this)
+        val result = ElementModQKTM(tmp2, this)
 
         //        assert(result.inBounds()) { "result not in bounds! ${result.element} > $q" }
 
@@ -186,13 +186,13 @@ class GroupContextJMB(
     }
 
     override fun binaryToElementModP(b: ByteArray): ElementModP? {
-        val tmp = b.toBigIntegerJMB()
-        return if (tmp >= p) null else ElementModPJMB(tmp, this)
+        val tmp = b.toBigIntegerKTM()
+        return if (tmp >= p) null else ElementModPKTM(tmp, this)
     }
 
     override fun binaryToElementModQ(b: ByteArray): ElementModQ? {
-        val tmp = b.toBigIntegerJMB()
-        return if (tmp >= q) null else ElementModQJMB(tmp, this)
+        val tmp = b.toBigIntegerKTM()
+        return if (tmp >= q) null else ElementModQKTM(tmp, this)
     }
 
     override fun ulongToElementModP(u: ULong): ElementModP {
@@ -228,18 +228,18 @@ class GroupContextJMB(
 private fun Element.getCompat(other: GroupContext): BigInteger {
     context.assertCompatible(other)
     return when (this) {
-        is ElementModPJMB -> this.element
-        is ElementModQJMB -> this.element
+        is ElementModPKTM -> this.element
+        is ElementModQKTM -> this.element
         else -> throw NotImplementedError("should only be two kinds of elements")
     }
 }
 
-class ElementModQJMB(val element: BigInteger, val groupContext: GroupContextJMB) : Element,
+class ElementModQKTM(val element: BigInteger, val groupContext: GroupContextKTM) : Element,
     Comparable<ElementModQ>, ElementModQ {
 
     internal fun BigInteger.wrap(): ElementModQ =
-        ElementModQJMB(this, groupContext)
-    internal fun BigInteger.modWrap(): ElementModQ = this.mod(groupContext.q).wrap()
+        ElementModQKTM(this, groupContext)
+    internal fun BigInteger.modWrap(): ElementModQ = this.rem(groupContext.q).wrap()
 
     override val context: GroupContext
         get() = groupContext
@@ -272,7 +272,7 @@ class ElementModQJMB(val element: BigInteger, val groupContext: GroupContextJMB)
 
     override fun equals(other: Any?) =
         when (other) {
-            is ElementModQJMB ->
+            is ElementModQKTM ->
                 other.element == this.element && other.groupContext.isCompatible(this.groupContext)
             else -> false
         }
@@ -282,11 +282,11 @@ class ElementModQJMB(val element: BigInteger, val groupContext: GroupContextJMB)
     override fun toString() = element.toString(10)
 }
 
-class ElementModPJMB(val element: BigInteger, val groupContext: GroupContextJMB) : Element,
+class ElementModPKTM(val element: BigInteger, val groupContext: GroupContextKTM) : Element,
     Comparable<ElementModP>, ElementModP {
 
-    internal fun BigInteger.wrap(): ElementModP = ElementModPJMB(this, groupContext)
-    internal fun BigInteger.modWrap(): ElementModP = this.remainder(groupContext.p).wrap()
+    internal fun BigInteger.wrap(): ElementModP = ElementModPKTM(this, groupContext)
+    internal fun BigInteger.modWrap(): ElementModP = this.rem(groupContext.p).wrap()
 
     override val context: GroupContext
         get() = groupContext
@@ -320,7 +320,7 @@ class ElementModPJMB(val element: BigInteger, val groupContext: GroupContextJMB)
 
     override fun equals(other: Any?) =
         when (other) {
-            is ElementModPJMB ->
+            is ElementModPKTM ->
                 other.element == this.element && other.groupContext.isCompatible(this.groupContext)
             else -> false
         }
